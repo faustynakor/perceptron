@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perceptron - rozpoznawanie cyfr</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: white;
+        }
+        button {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+        }
+        .reset-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        .perceptron-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .perceptron-list li {
+            padding: 10px;
+            margin: 5px;
+            background-color: #ddd;
+            display: inline-block;
+            width: 40px;
+            text-align: center;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        .active {
+            background-color: #39b339 !important;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Narysuj cyfrę</h1>
+    <div class="container">
+        <div class="canvas-container">
+            <canvas id="matrixCanvas" width="350" height="490"></canvas>
+            <button class="reset-btn" onclick="resetMatrix()">Wyczyść</button>
+        </div>
+    </div>
+    <h2>Możliwe cyfry:</h2>
+    <ul id="perceptronList" class="perceptron-list">
+        {% for digit in perceptrons %}
+            <li id="perc-{{ digit }}">{{ digit }}</li>
+        {% endfor %}
+    </ul>
+    
+    <script>
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+        const rows = 7, cols = 5;
+        const cellWidth = canvas.width / cols;
+        const cellHeight = canvas.height / rows;
+        let matrix = Array.from({length: rows}, () => Array(cols).fill(0));
+        let drawMode = null;
+        let isMouseDown = false;
+        let lastCell = { row: -1, col: -1 };
+        let predictTimeout;
+        
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    ctx.strokeRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
+                    if (matrix[r][c] === 1) {
+                        ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
+                    }
+                }
+            }
+        }
+        
+        function schedulePrediction() {
+            clearTimeout(predictTimeout);
+            predictTimeout = setTimeout(predictMatrix, 100);
+        }
+        
+        function handleCell(e) {
+            const rect = canvas.getBoundingClientRect();
+            const col = Math.floor((e.clientX - rect.left) / cellWidth);
+            const row = Math.floor((e.clientY - rect.top) / cellHeight);
+            if (lastCell.row === row && lastCell.col === col) return;
+            lastCell = { row, col };
+            
+            drawMode = drawMode ?? (matrix[row][col] === 0 ? "on" : "off");
+            if ((drawMode === "on" && matrix[row][col] === 0) || (drawMode === "off" && matrix[row][col] === 1)) {
+                matrix[row][col] = drawMode === "on" ? 1 : 0;
+                drawGrid();
+                schedulePrediction();
+            }
+        }
+        
+        canvas.addEventListener('mousedown', e => { isMouseDown = true; drawMode = null; handleCell(e); });
+        canvas.addEventListener('mouseup', () => { isMouseDown = false; drawMode = null; lastCell = { row: -1, col: -1 }; });
+        canvas.addEventListener('mousemove', e => { if (isMouseDown) handleCell(e); });
+        
+        function resetMatrix() {
+            matrix = Array.from({length: rows}, () => Array(cols).fill(0));
+            drawGrid();
+            document.querySelectorAll(".perceptron-list li").forEach(li => li.classList.remove("active"));
+        }
+        
+        function flattenMatrix(mat) {
+            return mat.flat();
+        }
+        
+        async function predictMatrix() {
+            const vector = flattenMatrix(matrix);
+            console.log("Wektor wysyłany do backendu:", vector);
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({vector})
+                });
+                const data = await response.json();
+                document.querySelectorAll(".perceptron-list li").forEach(li => li.classList.remove("active"));
+                Object.entries(data.predictions).forEach(([digit, isActive]) => {
+                    if (isActive) document.getElementById(`perc-${digit}`).classList.add("active");
+                });
+                console.log("Predykcje:", data.predictions);
+            } catch (error) {
+                console.error("Błąd w predykcji:", error);
+            }
+        }
+
+        drawGrid();
+    </script>
+</body>
+</html>
